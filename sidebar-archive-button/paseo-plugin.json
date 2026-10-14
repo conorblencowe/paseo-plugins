@@ -1,0 +1,8 @@
+{
+  "id": "sidebar-archive-button",
+  "name": "Sidebar archive button",
+  "media": [],
+  "requirements": {
+    "paseo": ">=0.11.1"
+  }
+}
