@@ -131,9 +131,12 @@ Check these again after Paseo updates. Run `$P --version` and search the bundle 
 | Row menu items | `sidebar-workspace-menu-{archive,rename,pin,copy-path,copy-branch-name,open-folder,labels,mark-as-read,mark-as-unread}-<workspaceKey>` |
 | Trailing fade behind ⋮ | `sidebar-workspace-trailing-scrim`; the backdrop colour is the last SVG `stop`'s `stop-color` |
 | Sidebar archive flow | Confirms risky worktree archives (dirty or unpushed), then archives optimistically |
+| Workspace agent tab | `workspace-tab-agent_<agentId>`; only exists while the agent's tab is open |
+| Agent status buckets | `needs_input`, `failed`, `running`, `attention`, `done` (`deriveAgentStateBucket` in `@getpaseo/protocol`) |
 
 ## Existing plugins
 
 | Plugin | What it does | Approach |
 | --- | --- | --- |
 | `sidebar-archive-button` | Archive icon beside the ⋮ on hovered sidebar workspace rows | DOM-injection fallback; drives the native menu's Archive item |
+| `sidebar-agent-tree` | Collapsible list of a workspace's agents and their status under its sidebar row | DOM-injection fallback; opens agents by clicking the row, then the agent's tab |
