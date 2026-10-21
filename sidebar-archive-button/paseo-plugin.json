@@ -1,7 +1,9 @@
 {
   "id": "sidebar-archive-button",
   "name": "Sidebar archive button",
-  "media": [],
+  "media": [
+    "assets/screenshot.png"
+  ],
   "requirements": {
     "paseo": ">=0.11.1"
   }

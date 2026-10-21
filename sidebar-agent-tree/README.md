@@ -2,6 +2,8 @@
 
 Shows each sidebar workspace's agents as a collapsible list with their status.
 
+![A sidebar workspace row with its two agents listed underneath, one running](assets/screenshot.png)
+
 ```bash
 paseo plugin add github:conorblencowe/paseo-plugins:sidebar-agent-tree
 ```

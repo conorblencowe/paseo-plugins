@@ -1,7 +1,9 @@
 {
   "id": "sidebar-agent-tree",
   "name": "Sidebar agent tree",
-  "media": [],
+  "media": [
+    "assets/screenshot.png"
+  ],
   "requirements": {
     "paseo": ">=0.11.1"
   }
