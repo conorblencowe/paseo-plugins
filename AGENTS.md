@@ -42,6 +42,8 @@ grep -n "archive\|<operation>" node_modules/@getpaseo/client/dist/index.d.ts   #
 
 ### 3. Scaffold
 
+From the repository root:
+
 ```bash
 $P plugin init "$PWD/<plugin-id>"
 cd "$PWD/<plugin-id>" && npm install
