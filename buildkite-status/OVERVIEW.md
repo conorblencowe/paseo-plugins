@@ -17,13 +17,20 @@ Open it from the explorer sidebar, from the build status icon in the workspace h
 - In the log tab, click a line number to select a line, and shift-click to select a range (on touch screens, tap a second line number). A comment box opens below the log. Write a note and choose "Send to agent" to send your note with just those lines and the step details, or copy the lines.
 - In the composer's attach menu, "Buildkite step" adds the same details as an attachment, so you can write your own prompt. The picker lists failing steps first. It only knows the builds the Buildkite panel has loaded since Paseo started.
 
-## Retry steps
+## Build actions
 
-Failed steps show a retry button when you hover them in the explorer, and the log tab has a "Retry" button for finished steps. Retrying needs a token with the `write_builds` scope; without it, Paseo shows an error and nothing changes. The log tab follows the new attempt.
+With a token that has the `write_builds` scope, the plugin can change builds:
+
+- Retry a failed step from its row (on hover) or from the log tab, which then follows the new attempt.
+- "Retry failed steps" retries every hard-failed step of a build; soft failures are left alone.
+- "Rebuild" starts a new build of a finished one, and "Cancel build" stops a running or blocked one after you confirm.
+- Blocked steps such as a release approval show "Unblock", which asks you to confirm first because it can start deploys. Block steps that ask for input fields need to be unblocked in Buildkite.
+
+Without `write_builds` the buttons still show, and pressing one explains that the token needs that scope.
 
 ## Setup
 
-The first time you open the panel, it asks for a Buildkite API access token. The panel links to Buildkite's token page with `read_builds` and `read_build_logs`, which it needs, and `write_builds`, which retrying needs. The plugin checks the token's scopes, then saves it on the Paseo host in `~/.paseo/buildkite-status/token`, readable only by your user. Settings → Plugins → Buildkite (also the gear in the explorer panel, or "Buildkite settings" in the Command Center) shows the connected account, the token's scopes and expiry, and whether retrying is allowed. You can replace the token there, or sign out, which deletes the file.
+The first time you open the panel, it asks for a Buildkite API access token. The panel links to Buildkite's token page with `read_builds` and `read_build_logs`, which it needs, and `write_builds`, which retrying needs. The plugin checks the token's scopes, then saves it on the Paseo host in `~/.paseo/buildkite-status/token`, readable only by your user. Settings → Plugins → Buildkite (also the gear in the explorer panel, or "Buildkite settings" in the Command Center) shows the connected account, the token's scopes and expiry, and whether build actions are allowed. When the token has three days or less left, the explorer panel and Settings show a warning and Paseo shows a notification once per session. You can replace the token there, or sign out, which deletes the file.
 
 ## How it finds the build
 

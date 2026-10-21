@@ -64,6 +64,7 @@ assert.equal(tail("abcdef", 10, 3), "def");
 
 const build = {
   id: "b",
+  apiUrl: "https://api.buildkite.com/v2/organizations/o/pipelines/p/builds/7",
   number: 7,
   state: "failed",
   message: "m",
@@ -221,5 +222,14 @@ const withFailure = [...noisy.slice(0, 500), "  ✘ broken test", ...noisy.slice
 const trimmed = trimForAgent(withFailure);
 assert.ok(trimmed.startsWith("… 470 earlier lines omitted\nline 470 "));
 assert.ok(trimmed.includes("  ✘ broken test") && trimmed.endsWith("later lines omitted"));
+
+const { expiryWarning } = await import("../shared/token.ts");
+const now = Date.parse("2026-10-21T00:00:00Z");
+assert.equal(expiryWarning(null, now), null);
+assert.equal(expiryWarning("2026-10-27T04:41:57Z", now), null);
+assert.equal(expiryWarning("2026-10-23T12:00:00Z", now), "Your Buildkite token expires in 2 days.");
+assert.equal(expiryWarning("2026-10-22T01:00:00Z", now), "Your Buildkite token expires in 1 day.");
+assert.equal(expiryWarning("2026-10-21T05:00:00Z", now), "Your Buildkite token expires today.");
+assert.equal(expiryWarning("2026-10-20T05:00:00Z", now), "Your Buildkite token has expired.");
 
 console.log("parse checks passed");

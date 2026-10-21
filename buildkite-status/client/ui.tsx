@@ -1,6 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { useRpc } from "@getpaseo/plugin/client";
-import { Icon, useToast } from "@getpaseo/plugin/client/react-native";
+import { Icon, Modal, useToast } from "@getpaseo/plugin/client/react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
@@ -11,7 +11,13 @@ import {
   Text,
   View,
 } from "react-native";
-import { type BuildkiteJob, retryStepRpc, statusRpc } from "../shared/buildkite";
+import {
+  buildActionRpc,
+  type BuildkiteJob,
+  retryStepRpc,
+  statusRpc,
+  unblockStepRpc,
+} from "../shared/buildkite";
 
 // Mirrors Paseo's own tokens (packages/app/src/styles/theme.ts) so the panels sit flush
 // with the built-in pull request pane; the plugin theme only exposes colors.
@@ -261,6 +267,141 @@ export function GhostButton({
       <Text style={{ fontSize: FONT.sm, color: muted }}>{label}</Text>
     </Pressable>
   );
+}
+
+export function PrimaryButton({
+  theme,
+  icon,
+  label,
+  busy,
+  onPress,
+}: {
+  theme: PluginTheme;
+  icon: string;
+  label: string;
+  busy?: boolean;
+  onPress: () => void;
+}) {
+  const color = theme.colors.accentForeground;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={busy}
+      onPress={onPress}
+      style={(state) => ({
+        height: 28,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: SPACE[1],
+        paddingHorizontal: SPACE[3],
+        borderRadius: 6,
+        backgroundColor: theme.colors.accent,
+        opacity: busy ? 0.6 : isHovered(state) ? 0.9 : 1,
+      })}
+    >
+      {busy ? (
+        <ActivityIndicator size="small" color={color} />
+      ) : (
+        <Icon name={icon} size={14} color={color} />
+      )}
+      <Text style={{ fontSize: FONT.sm, fontWeight: "500", color }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+// For actions that change a build other people may rely on: canceling and unblocking.
+export function ConfirmModal({
+  theme,
+  open,
+  title,
+  body,
+  confirmLabel,
+  confirmIcon,
+  onConfirm,
+  onClose,
+}: {
+  theme: PluginTheme;
+  open: boolean;
+  title: string;
+  body: string;
+  confirmLabel: string;
+  confirmIcon: string;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal
+      title={title}
+      icon={<Icon name="TriangleAlert" size={18} color={theme.colors.statusWarning} />}
+      open={open}
+      onOpenChange={(next) => !next && onClose()}
+    >
+      <Modal.Content>
+        <Text style={{ fontSize: FONT.base, lineHeight: 20, color: theme.colors.foreground }}>
+          {body}
+        </Text>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "flex-end",
+            gap: SPACE[2],
+            marginTop: SPACE[3],
+          }}
+        >
+          <GhostButton theme={theme} icon="X" label="Cancel" onPress={onClose} />
+          <PrimaryButton
+            theme={theme}
+            icon={confirmIcon}
+            label={confirmLabel}
+            onPress={() => {
+              onClose();
+              onConfirm();
+            }}
+          />
+        </View>
+      </Modal.Content>
+    </Modal>
+  );
+}
+
+function useStatusMutation<Input>(run: (input: Input) => Promise<string>) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  return useMutation({
+    mutationFn: run,
+    onSuccess: (message) => {
+      toast.show(message, { variant: "success" });
+      return queryClient.invalidateQueries({ queryKey: ["buildkite-status"] });
+    },
+    onError: (error) => toast.error(error.message),
+  });
+}
+
+// Write actions stay visible so they can be found; a read-only token explains itself on press.
+export function useWriteGuard(canWrite: boolean) {
+  const toast = useToast();
+  return (run: () => void) =>
+    canWrite
+      ? run()
+      : toast.error(
+          "This needs a token with the write_builds scope. Replace it in Settings → Plugins → Buildkite.",
+        );
+}
+
+export function useBuildAction() {
+  const run = useRpc(buildActionRpc);
+  return useStatusMutation(
+    async (input: { buildId: string; action: "rebuild" | "cancel" | "retry-failed" }) =>
+      (await run(input)).message,
+  );
+}
+
+export function useUnblockStep() {
+  const unblock = useRpc(unblockStepRpc);
+  return useStatusMutation(async (job: BuildkiteJob) => {
+    await unblock({ jobId: job.id });
+    return `Unblocked ${job.name}`;
+  });
 }
 
 export const RETRYABLE = new Set(["failed", "timed_out", "canceled", "expired", "passed"]);

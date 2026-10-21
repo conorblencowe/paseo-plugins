@@ -8,6 +8,8 @@ import { promisify } from "node:util";
 import type {
   accountRpc,
   BuildkiteAnnotation,
+  buildActionRpc,
+  unblockStepRpc,
   BuildkiteBuild,
   BuildkiteJob,
   logRpc,
@@ -99,9 +101,13 @@ async function readToken(): Promise<string | null> {
 async function api(token: string, url: string, method = "GET"): Promise<Response> {
   const response = await fetch(url, { method, headers: { Authorization: `Bearer ${token}` } });
   if (response.status === 401)
-    throw new Error("Buildkite rejected the token. Sign out and sign in again.");
+    throw new Error(
+      "Buildkite rejected the token; it may have expired. Replace it in Settings → Plugins → Buildkite.",
+    );
   if (response.status === 403 && method !== "GET")
-    throw new Error("Your token can't change builds. Sign in with a token that has write_builds.");
+    throw new Error(
+      "Your token can't change builds. Replace it in Settings → Plugins → Buildkite with one that has write_builds.",
+    );
   if (!response.ok) {
     const body = await response.text();
     let message = body.slice(0, 200);
@@ -113,6 +119,27 @@ async function api(token: string, url: string, method = "GET"): Promise<Response
   return response;
 }
 
+const TOKEN_INFO_MS = 10 * 60_000;
+let tokenInfo: { token: string; at: number; expiresAt: string | null; canWrite: boolean } | null =
+  null;
+
+// Scopes and expiry change rarely; check them every ten minutes, not on every poll.
+async function tokenState(token: string) {
+  if (tokenInfo?.token !== token || Date.now() - tokenInfo.at > TOKEN_INFO_MS) {
+    const info = (await (await api(token, `${API}access-token`)).json()) as {
+      scopes: string[];
+      expires_at?: string | null;
+    };
+    tokenInfo = {
+      token,
+      at: Date.now(),
+      expiresAt: info.expires_at ?? null,
+      canWrite: info.scopes.includes("write_builds"),
+    };
+  }
+  return { expiresAt: tokenInfo.expiresAt, canWrite: tokenInfo.canWrite };
+}
+
 async function requireToken(): Promise<string> {
   const token = await readToken();
   if (!token) throw new Error("Sign in to Buildkite first.");
@@ -122,6 +149,7 @@ async function requireToken(): Promise<string> {
 function toBuild(raw: RawBuild, annotations: BuildkiteAnnotation[]): BuildkiteBuild {
   return {
     id: raw.id,
+    apiUrl: raw.url,
     number: raw.number,
     state: raw.state,
     message: (raw.message ?? "").split("\n")[0],
@@ -185,7 +213,8 @@ export async function getStatuses({
   directories,
 }: RpcInput<typeof statusesRpc>): Promise<RpcOutput<typeof statusesRpc>> {
   const token = await readToken();
-  if (!token) return { signedIn: false, results: [] };
+  if (!token) return { signedIn: false, token: null, results: [] };
+  const access = await tokenState(token);
   const checkouts = (
     await Promise.all(
       directories.map(async (directory) => {
@@ -201,7 +230,7 @@ export async function getStatuses({
       }),
     )
   ).filter((checkout) => checkout !== null);
-  if (checkouts.length === 0) return { signedIn: true, results: [] };
+  if (checkouts.length === 0) return { signedIn: true, token: access, results: [] };
 
   const branches = [...new Set(checkouts.map(({ branch }) => branch))];
   const query = branches.map((branch) => `branch[]=${encodeURIComponent(branch)}`).join("&");
@@ -211,6 +240,7 @@ export async function getStatuses({
   ).json()) as RawBuild[];
   return {
     signedIn: true,
+    token: access,
     results: checkouts.map(({ directory, branch, origin }) => ({
       directory,
       builds: latestPerPipeline(
@@ -249,7 +279,7 @@ export async function getStatus({
   );
   lastStatus.delete(directory);
   lastStatus.set(directory, { branch, builds });
-  return { signedIn: true, branch, commit, builds };
+  return { signedIn: true, branch, commit, builds, token: await tokenState(token) };
 }
 
 async function fetchLog(url: string): Promise<string> {
@@ -282,13 +312,61 @@ async function contextFor(step: Step): Promise<string> {
   return stepContext(step, step.job.logUrl ? stripAnsi(await fetchLog(step.job.logUrl)) : "");
 }
 
+// Build and job actions go to URLs built from the build's API URL, which must be Buildkite's.
+function buildUrl(build: BuildkiteBuild, path: string): string {
+  if (!build.apiUrl.startsWith(API)) throw new Error(`Not a Buildkite API URL: ${build.apiUrl}`);
+  return `${build.apiUrl}${path}`;
+}
+
+async function retryJob(build: BuildkiteBuild, jobId: string, token: string): Promise<string> {
+  const url = buildUrl(build, `/jobs/${jobId}/retry`);
+  return ((await (await api(token, url, "PUT")).json()) as { id: string }).id;
+}
+
 export async function retryStep({ jobId }: RpcInput<typeof retryStepRpc>) {
-  const job = knownSteps().find((step) => step.job.id === jobId)?.job;
-  if (!job?.logUrl) throw new Error("That step can't be retried from here.");
-  // The job's API log URL already names its org, pipeline and build.
-  const url = job.logUrl.replace(/\/log$/, "/retry");
-  const retried = (await (await api(await requireToken(), url, "PUT")).json()) as { id: string };
-  return { jobId: retried.id };
+  const step = knownSteps().find(({ job }) => job.id === jobId);
+  if (!step?.job.logUrl) throw new Error("That step can't be retried from here.");
+  return { jobId: await retryJob(step.build, jobId, await requireToken()) };
+}
+
+const HARD_FAILURES = new Set(["failed", "timed_out", "expired"]);
+
+export async function buildAction({
+  buildId,
+  action,
+}: RpcInput<typeof buildActionRpc>): Promise<RpcOutput<typeof buildActionRpc>> {
+  const build = [...lastStatus.values()]
+    .flatMap(({ builds }) => builds)
+    .find(({ id }) => id === buildId);
+  if (!build) throw new Error("That build is no longer the latest. Refresh and try again.");
+  const token = await requireToken();
+  const label = `${build.pipelineName} #${build.number}`;
+  if (action === "rebuild") {
+    const rebuilt = (await (await api(token, buildUrl(build, "/rebuild"), "PUT")).json()) as {
+      number: number;
+    };
+    return { message: `Started ${build.pipelineName} #${rebuilt.number}` };
+  }
+  if (action === "cancel") {
+    await api(token, buildUrl(build, "/cancel"), "PUT");
+    return { message: `Canceling ${label}` };
+  }
+  const failed = build.jobs.filter(
+    (job) => job.logUrl && HARD_FAILURES.has(job.state) && !job.softFailed,
+  );
+  if (failed.length === 0) throw new Error(`${label} has no failed steps to retry.`);
+  await Promise.all(failed.map((job) => retryJob(build, job.id, token)));
+  return {
+    message: `Retrying ${failed.length} failed ${failed.length === 1 ? "step" : "steps"} in ${label}`,
+  };
+}
+
+export async function unblockStep({ jobId }: RpcInput<typeof unblockStepRpc>) {
+  const step = knownSteps().find(({ job }) => job.id === jobId);
+  if (!step || step.job.state !== "blocked")
+    throw new Error("That step is not waiting to be unblocked.");
+  await api(await requireToken(), buildUrl(step.build, `/jobs/${jobId}/unblock`), "PUT");
+  return {};
 }
 
 export async function getStepContext({ jobId, selection }: RpcInput<typeof stepContextRpc>) {
@@ -338,6 +416,7 @@ export async function signIn({ token }: RpcInput<typeof signInRpc>) {
   };
   const missing = REQUIRED_SCOPES.filter((scope) => !scopes.includes(scope));
   if (missing.length) throw new Error(`The token is missing these scopes: ${missing.join(", ")}`);
+  tokenInfo = null;
   await mkdir(dirname(TOKEN_FILE), { recursive: true, mode: 0o700 });
   await writeFile(TOKEN_FILE, token, { mode: 0o600 });
   return {};
@@ -369,6 +448,7 @@ export async function getAccount(): Promise<RpcOutput<typeof accountRpc>> {
 }
 
 export async function signOut() {
+  tokenInfo = null;
   await rm(TOKEN_FILE, { force: true });
   return {};
 }

@@ -30,6 +30,8 @@ const annotation = z.object({
 
 const build = z.object({
   id: z.string(),
+  // REST URL of the build, used by the daemon for build and step actions.
+  apiUrl: z.string(),
   number: z.number(),
   state: z.string(),
   message: z.string(),
@@ -43,6 +45,10 @@ const build = z.object({
 
 export type BuildkiteBuild = z.infer<typeof build>;
 export type BuildkiteJob = z.infer<typeof job>;
+
+// canWrite: the token has write_builds, needed to retry, rebuild, cancel and unblock.
+const tokenState = z.object({ expiresAt: z.string().nullable(), canWrite: z.boolean() });
+export type BuildkiteTokenState = z.infer<typeof tokenState>;
 export type BuildkiteAnnotation = z.infer<typeof annotation>;
 
 const buildSummary = z.object({
@@ -61,6 +67,7 @@ export const statusesRpc = defineRpc({
   input: z.object({ directories: z.array(z.string()) }),
   output: z.object({
     signedIn: z.boolean(),
+    token: tokenState.nullable(),
     results: z.array(z.object({ directory: z.string(), builds: z.array(buildSummary) })),
   }),
 });
@@ -75,6 +82,7 @@ export const statusRpc = defineRpc({
       branch: z.string(),
       commit: z.string(),
       builds: z.array(build),
+      token: tokenState,
     }),
   ]),
 });
@@ -131,6 +139,21 @@ export const retryStepRpc = defineRpc({
   name: "buildkite.step.retry",
   input: z.object({ jobId: z.string() }),
   output: z.object({ jobId: z.string() }),
+});
+
+export const buildActionRpc = defineRpc({
+  name: "buildkite.build.action",
+  input: z.object({
+    buildId: z.string(),
+    action: z.enum(["rebuild", "cancel", "retry-failed"]),
+  }),
+  output: z.object({ message: z.string() }),
+});
+
+export const unblockStepRpc = defineRpc({
+  name: "buildkite.step.unblock",
+  input: z.object({ jobId: z.string() }),
+  output: z.object({}),
 });
 
 export const searchStepsRpc = defineRpc({

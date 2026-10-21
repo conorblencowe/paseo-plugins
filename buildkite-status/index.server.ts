@@ -1,5 +1,6 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import {
+  buildAction,
   getAccount,
   getLog,
   getStatus,
@@ -9,9 +10,12 @@ import {
   searchSteps,
   signIn,
   signOut,
+  unblockStep,
 } from "./server/buildkite";
 import {
   accountRpc,
+  buildActionRpc,
+  unblockStepRpc,
   logRpc,
   retryStepRpc,
   searchStepsRpc,
@@ -32,5 +36,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(stepContextRpc, getStepContext);
   server.handle(searchStepsRpc, searchSteps);
   server.handle(retryStepRpc, retryStep);
+  server.handle(buildActionRpc, buildAction);
+  server.handle(unblockStepRpc, unblockStep);
   return () => {};
 }

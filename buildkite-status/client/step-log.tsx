@@ -34,8 +34,10 @@ import { SendToAgentButton, useAgentSender } from "./send-to-agent";
 import {
   duration,
   GhostButton,
+  PrimaryButton,
   RETRYABLE,
   useRetryStep,
+  useWriteGuard,
   FONT,
   isActive,
   isHovered,
@@ -118,16 +120,6 @@ function makeStyles(theme: PluginTheme) {
       justifyContent: "flex-end" as const,
       gap: SPACE[2],
     },
-    primaryButton: {
-      height: 28,
-      flexDirection: "row" as const,
-      alignItems: "center" as const,
-      gap: SPACE[1],
-      paddingHorizontal: SPACE[3],
-      borderRadius: 6,
-      backgroundColor: c.accent,
-    },
-    primaryButtonText: { fontSize: FONT.sm, fontWeight: "500" as const, color: c.accentForeground },
     sectionRow: {
       minHeight: 28,
       flexDirection: "row" as const,
@@ -188,6 +180,7 @@ export function StepLogPanel({ theme, workspaceId, navigation }: PluginWorkspace
       buildLabel={selected.buildLabel}
       workspaceId={workspaceId}
       navigation={navigation}
+      canWrite={status.data?.signedIn ? status.data.token.canWrite : false}
       styles={styles}
       theme={theme}
     />
@@ -199,6 +192,7 @@ function StepLog({
   buildLabel,
   workspaceId,
   navigation,
+  canWrite,
   styles,
   theme,
 }: {
@@ -206,6 +200,7 @@ function StepLog({
   buildLabel: string;
   workspaceId: string;
   navigation: PluginWorkspacePanelProps["navigation"];
+  canWrite: boolean;
   styles: ReturnType<typeof makeStyles>;
   theme: PluginTheme;
 }) {
@@ -222,6 +217,7 @@ function StepLog({
     refetchInterval: running ? 5_000 : false,
   });
   const retry = useRetryStep(workspaceId);
+  const requireWrite = useWriteGuard(canWrite);
   const toast = useToast();
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
@@ -416,7 +412,7 @@ function StepLog({
             icon="RotateCcw"
             label="Retry"
             busy={retry.isPending}
-            onPress={() => retry.mutate({ job, buildLabel })}
+            onPress={() => requireWrite(() => retry.mutate({ job, buildLabel }))}
           />
         )}
         <SendToAgentButton
@@ -603,22 +599,13 @@ function StepLog({
                 )
               }
             />
-            <Pressable
-              accessibilityRole="button"
-              disabled={sender.busy}
+            <PrimaryButton
+              theme={theme}
+              icon="MessageSquarePlus"
+              label="Send to agent"
+              busy={sender.busy}
               onPress={sendSelection}
-              style={(state) => [
-                styles.primaryButton,
-                { opacity: sender.busy ? 0.6 : isHovered(state) ? 0.9 : 1 },
-              ]}
-            >
-              {sender.busy ? (
-                <ActivityIndicator size="small" color={theme.colors.accentForeground} />
-              ) : (
-                <Icon name="MessageSquarePlus" size={14} color={theme.colors.accentForeground} />
-              )}
-              <Text style={styles.primaryButtonText}>Send to agent</Text>
-            </Pressable>
+            />
           </View>
         </View>
       )}

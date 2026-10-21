@@ -12,6 +12,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Text, View } from "react-native";
 import { accountRpc, signInRpc, signOutRpc } from "../shared/buildkite";
+import { expiryWarning } from "../shared/token";
 import { FONT, SPACE, TOKEN_URL } from "./ui";
 
 export function BuildkiteSettings({ theme }: PluginSurfaceProps) {
@@ -63,6 +64,7 @@ export function BuildkiteSettings({ theme }: PluginSurfaceProps) {
           {connected && !data.error ? (
             <SettingsRow
               label="Token"
+              error={expiryWarning(data.expiresAt)}
               hint={[
                 data.description,
                 data.expiresAt ? `Expires ${new Date(data.expiresAt).toLocaleDateString()}` : null,

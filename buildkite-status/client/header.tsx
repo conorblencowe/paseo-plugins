@@ -7,6 +7,7 @@ import { type ToastVariant, useToast } from "@getpaseo/plugin/client/react-nativ
 import type { PaseoWorkspace } from "@getpaseo/client";
 import { useEffect, useSyncExternalStore } from "react";
 import { type BuildkiteBuildSummary, statusesRpc } from "../shared/buildkite";
+import { expiryWarning } from "../shared/token";
 import { isActive, present, stateLabel, StatusIcon, worst } from "./ui";
 
 const IDLE_POLL_MS = 60_000;
@@ -65,6 +66,7 @@ export function installHeaderStatus(client: PluginClientContext): () => void {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let release: (() => void) | undefined;
+  let warnedAboutExpiry = false;
   const workspaces = new Map<string, { directory: string; name: string }>();
   const buttons = new Map<string, PluginButtonRegistration>();
 
@@ -108,9 +110,19 @@ export function installHeaderStatus(client: PluginClientContext): () => void {
     try {
       const tracked = [...workspaces];
       const directories = [...new Set(tracked.map(([, { directory }]) => directory))];
-      const { signedIn, results } = directories.length
+      const { signedIn, token, results } = directories.length
         ? await client.rpc(statusesRpc, { directories })
-        : { signedIn: false, results: [] };
+        : { signedIn: false, token: null, results: [] };
+      // Once per app session, so an expiring token is noticed before it stops working.
+      const warning = expiryWarning(token?.expiresAt);
+      if (warning && !warnedAboutExpiry) {
+        warnedAboutExpiry = true;
+        notices.push({
+          at: Date.now(),
+          variant: "warning",
+          message: `${warning} Replace it in Settings → Plugins → Buildkite.`,
+        });
+      }
       const byDirectory = new Map(results.map((result) => [result.directory, result.builds]));
       for (const [workspaceId, { directory, name }] of tracked) {
         const builds = signedIn ? (byDirectory.get(directory) ?? []) : [];

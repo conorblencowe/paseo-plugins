@@ -43,8 +43,15 @@ import {
   useSelectedStep,
   TOKEN_URL,
   worst,
+  ConfirmModal,
+  GhostButton,
+  isActive,
+  useBuildAction,
+  useUnblockStep,
+  useWriteGuard,
 } from "./ui";
 import { useBuildNotices } from "./header";
+import { expiryWarning } from "../shared/token";
 
 const PILL_ORDER: Presentation[] = ["failure", "warning", "pending", "manual", "success"];
 
@@ -118,6 +125,26 @@ function makeStyles(theme: PluginTheme) {
       paddingVertical: SPACE[2],
     },
     danger: { fontSize: FONT.sm, color: c.statusDanger },
+    notice: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: SPACE[2],
+      paddingHorizontal: SPACE[3],
+      paddingVertical: SPACE[2],
+      borderBottomWidth: 1,
+      borderBottomColor: c.border,
+      backgroundColor: c.surface1,
+    },
+    noticeText: { flex: 1, fontSize: FONT.sm, color: c.foreground },
+    link: { fontSize: FONT.sm, color: c.foregroundMuted, textDecorationLine: "underline" as const },
+    actions: {
+      flexDirection: "row" as const,
+      flexWrap: "wrap" as const,
+      gap: SPACE[1],
+      paddingHorizontal: SPACE[3],
+      marginTop: -SPACE[2],
+      paddingBottom: SPACE[2],
+    },
     signIn: { gap: SPACE[3], padding: SPACE[4] },
     body: { fontSize: FONT.sm, color: c.foregroundMuted, lineHeight: 18 },
     input: {
@@ -163,6 +190,8 @@ export function BuildsPanel({
   }
 
   const data = status.data;
+  const canWrite = data?.token.canWrite ?? false;
+  const warning = expiryWarning(data?.token.expiresAt);
   return (
     <View style={styles.root}>
       <View style={styles.toolbar}>
@@ -189,6 +218,15 @@ export function BuildsPanel({
           onPress={onOpenSettings}
         />
       </View>
+      {warning && (
+        <View style={styles.notice}>
+          <Icon name="TriangleAlert" size={14} color={theme.colors.statusWarning} />
+          <Text style={styles.noticeText}>{warning}</Text>
+          <Pressable accessibilityRole="button" onPress={onOpenSettings}>
+            <Text style={styles.link}>Replace token</Text>
+          </Pressable>
+        </View>
+      )}
       <ScrollView style={styles.root} showsVerticalScrollIndicator={false}>
         {status.error ? (
           <Text style={[styles.empty, styles.danger]}>{status.error.message}</Text>
@@ -205,6 +243,7 @@ export function BuildsPanel({
                 head={data.commit}
                 selectedJobId={selected?.job.id}
                 retryingJobId={retry.isPending ? retry.variables?.job.id : undefined}
+                canWrite={canWrite}
                 styles={styles}
                 theme={theme}
                 onOpenStep={onOpenStep}
@@ -212,6 +251,14 @@ export function BuildsPanel({
               />
             </View>
           ))
+        )}
+        {data && !canWrite && data.builds.length > 0 && (
+          <Pressable accessibilityRole="button" onPress={onOpenSettings}>
+            <Text style={styles.empty}>
+              Read-only token: add the write_builds scope in Settings to retry, rebuild, cancel and
+              unblock.
+            </Text>
+          </Pressable>
         )}
       </ScrollView>
     </View>
@@ -268,6 +315,7 @@ function BuildSection({
   head,
   selectedJobId,
   retryingJobId,
+  canWrite,
   styles,
   theme,
   onOpenStep,
@@ -277,6 +325,7 @@ function BuildSection({
   head: string;
   selectedJobId: string | undefined;
   retryingJobId: string | undefined;
+  canWrite: boolean;
   styles: Styles;
   theme: PluginTheme;
   onOpenStep(step: SelectedStep): void;
@@ -284,6 +333,18 @@ function BuildSection({
 }) {
   const [stepsOpen, setStepsOpen] = useState(true);
   const [failedOnly, setFailedOnly] = useState(false);
+  const [confirm, setConfirm] = useState<
+    { kind: "cancel" } | { kind: "unblock"; job: BuildkiteJob } | null
+  >(null);
+  const buildAction = useBuildAction();
+  const unblock = useUnblockStep();
+  const hardFailed = build.jobs.filter(
+    (job) =>
+      job.logUrl && ["failed", "timed_out", "expired"].includes(job.state) && !job.softFailed,
+  ).length;
+  const running = isActive(build.state) || build.state === "blocked";
+  const busyAction = buildAction.isPending ? buildAction.variables?.action : undefined;
+  const requireWrite = useWriteGuard(canWrite);
   const presentation = present(build.state);
   const buildLabel = `${build.pipelineName} #${build.number}`;
   const counts = new Map<Presentation, number>();
@@ -301,10 +362,12 @@ function BuildSection({
       label={label}
       active={job.id === selectedJobId}
       retrying={job.id === retryingJobId}
+      unblocking={unblock.isPending && unblock.variables?.id === job.id}
       styles={styles}
       theme={theme}
       onPress={() => onOpenStep({ job, buildLabel })}
-      onRetry={() => onRetryStep({ job, buildLabel })}
+      onRetry={() => requireWrite(() => onRetryStep({ job, buildLabel }))}
+      onUnblock={() => requireWrite(() => setConfirm({ kind: "unblock", job }))}
     />
   );
 
@@ -343,6 +406,58 @@ function BuildSection({
           </View>
         )}
       </Pressable>
+
+      <View style={styles.actions}>
+        {hardFailed > 0 && (
+          <GhostButton
+            theme={theme}
+            icon="RotateCcw"
+            label={`Retry failed steps (${hardFailed})`}
+            busy={busyAction === "retry-failed"}
+            onPress={() =>
+              requireWrite(() => buildAction.mutate({ buildId: build.id, action: "retry-failed" }))
+            }
+          />
+        )}
+        {running ? (
+          <GhostButton
+            theme={theme}
+            icon="CircleStop"
+            label="Cancel build"
+            busy={busyAction === "cancel"}
+            onPress={() => requireWrite(() => setConfirm({ kind: "cancel" }))}
+          />
+        ) : (
+          <GhostButton
+            theme={theme}
+            icon="RefreshCw"
+            label="Rebuild"
+            busy={busyAction === "rebuild"}
+            onPress={() =>
+              requireWrite(() => buildAction.mutate({ buildId: build.id, action: "rebuild" }))
+            }
+          />
+        )}
+      </View>
+      <ConfirmModal
+        theme={theme}
+        open={confirm !== null}
+        title={
+          confirm?.kind === "unblock" ? `Unblock ${confirm.job.name}?` : `Cancel ${buildLabel}?`
+        }
+        body={
+          confirm?.kind === "unblock"
+            ? "This lets the rest of the build run in Buildkite, which may include deploys."
+            : "Running steps stop and the build is marked canceled for everyone."
+        }
+        confirmLabel={confirm?.kind === "unblock" ? "Unblock" : "Cancel build"}
+        confirmIcon={confirm?.kind === "unblock" ? "Play" : "CircleStop"}
+        onClose={() => setConfirm(null)}
+        onConfirm={() => {
+          if (confirm?.kind === "unblock") unblock.mutate(confirm.job);
+          else buildAction.mutate({ buildId: build.id, action: "cancel" });
+        }}
+      />
 
       {build.annotations.length > 0 && (
         <Annotations annotations={build.annotations} styles={styles} theme={theme} />
@@ -583,19 +698,23 @@ function StepRow({
   label,
   active,
   retrying,
+  unblocking,
   styles,
   theme,
   onPress,
   onRetry,
+  onUnblock,
 }: {
   job: BuildkiteJob;
   label?: string;
   active: boolean;
   retrying: boolean;
+  unblocking: boolean;
   styles: Styles;
   theme: PluginTheme;
   onPress(): void;
   onRetry(): void;
+  onUnblock(): void;
 }) {
   const presentation = present(job.state, job.softFailed);
   const trailing = job.softFailed ? `soft failed · ${duration(job)}` : duration(job);
@@ -621,6 +740,15 @@ function StepRow({
             {trailing || stateLabel(job.state)}
           </Text>
           {/* Hover reveals retry on desktop; touch platforms have no hover, so keep it shown. */}
+          {job.state === "blocked" && !job.logUrl && (
+            <GhostButton
+              theme={theme}
+              icon="Play"
+              label="Unblock"
+              busy={unblocking}
+              onPress={onUnblock}
+            />
+          )}
           {failed && job.logUrl && (retrying || isHovered(state) || Platform.OS !== "web") && (
             <ToolbarButton
               theme={theme}
