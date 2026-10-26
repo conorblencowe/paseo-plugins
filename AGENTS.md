@@ -108,8 +108,11 @@ $P plugin logs <plugin-id>
 
 - Never restart the daemon. It can kill the running agent.
 - Agents can't see the Paseo desktop window, and the daemon (`127.0.0.1:6767`) doesn't serve the
-  web UI. Ask the user to check the UI and try the action, including any confirmation or error path.
-  For destructive actions, suggest a throwaway workspace.
+  web UI. To inspect rendered plugin DOM, open `https://app.paseo.sh` with the Paseo `browser_*`
+  MCP tools: it connects to the local daemon (allowed by `cors.allowedOrigins`) and loads the
+  installed plugins. Its bundle can differ from the desktop app's, so still ask the user to check
+  the UI and try the action, including any confirmation or error path. For destructive actions,
+  suggest a throwaway workspace.
 
 ### 6. Write `OVERVIEW.md`
 
@@ -122,7 +125,7 @@ Report what was built and where. Include the verification you actually ran and w
 user to check in the UI. List any limits (unsupported surfaces, platforms, fragility), the reload
 command, and a supported alternative if you used the fallback.
 
-## Known app internals (Paseo 0.11.1)
+## Known app internals (Paseo 0.13.0)
 
 Check these again after Paseo updates. Run `$P --version` and search the bundle again.
 

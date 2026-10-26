@@ -3,6 +3,6 @@
   "name": "Buildkite status",
   "media": [],
   "requirements": {
-    "paseo": ">=0.11.1"
+    "paseo": ">=0.13.0"
   }
 }

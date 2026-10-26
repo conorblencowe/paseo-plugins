@@ -11,7 +11,6 @@ export default function contribute(client: PluginClientContext) {
     id: "status",
     title: "Buildkite",
     icon: "Workflow",
-    context: "workspace",
     locations: ["explorer"],
     Component: (props: PluginWorkspacePanelProps) => (
       <BuildsPanel
@@ -28,7 +27,6 @@ export default function contribute(client: PluginClientContext) {
     id: "step",
     title: "Buildkite log",
     icon: "ScrollText",
-    context: "workspace",
     locations: ["workspace"],
     Component: StepLogPanel,
   });

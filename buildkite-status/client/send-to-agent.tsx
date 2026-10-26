@@ -1,6 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { type PluginWorkspacePanelProps, usePaseo, useRpc } from "@getpaseo/plugin/client";
-import { Icon, Modal, useToast } from "@getpaseo/plugin/client/react-native";
+import { Icon, Modal, useToast } from "@getpaseo/plugin/client/ui";
 import { type ReactNode, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { type BuildkiteJob, stepContextRpc } from "../shared/buildkite";

@@ -3,7 +3,7 @@ import type {
   PluginButtonRegistration,
   PluginClientContext,
 } from "@getpaseo/plugin/client";
-import { type ToastVariant, useToast } from "@getpaseo/plugin/client/react-native";
+import { type ToastVariant, useToast } from "@getpaseo/plugin/client/ui";
 import type { PaseoWorkspace } from "@getpaseo/client";
 import { useEffect, useSyncExternalStore } from "react";
 import { type BuildkiteBuildSummary, statusesRpc } from "../shared/buildkite";
