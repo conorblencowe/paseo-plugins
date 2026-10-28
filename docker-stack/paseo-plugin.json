@@ -1,0 +1,8 @@
+{
+  "id": "docker-stack",
+  "name": "Docker stack",
+  "media": [],
+  "requirements": {
+    "paseo": ">=0.13.0"
+  }
+}
